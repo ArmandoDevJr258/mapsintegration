@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { StyleSheet, View, Text, TextInput, Button, Keyboard, Alert } from "react-native";
-import MapView, { Marker, UrlTile, Polyline } from "react-native-maps";
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Keyboard, Alert } from "react-native";
+import MapView, { Marker, UrlTile, Polyline, MapPressEvent } from "react-native-maps";
 import * as Location from "expo-location";
 
 export default function App() {
@@ -13,7 +13,9 @@ export default function App() {
 
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [marker, setMarker] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [addedMarkers, setAddedMarkers] = useState<{ latitude: number; longitude: number }[]>([]);
   const [searchText, setSearchText] = useState("");
+  const [selectedMarker, setSelectedMarker] = useState<{ latitude: number; longitude: number } | null>(null);
 
   // Get user location
   useEffect(() => {
@@ -44,13 +46,8 @@ export default function App() {
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchText)}`,
-        {
-          headers: {
-            "User-Agent": "MyExpoApp/1.0 (example@example.com)",
-          },
-        }
+        { headers: { "User-Agent": "MyExpoApp/1.0 (example@example.com)" } }
       );
-
       const data = await response.json();
 
       if (data.length > 0) {
@@ -58,12 +55,7 @@ export default function App() {
         const lat = parseFloat(firstResult.lat);
         const lon = parseFloat(firstResult.lon);
 
-        setRegion({
-          ...region,
-          latitude: lat,
-          longitude: lon,
-        });
-
+        setRegion({ ...region, latitude: lat, longitude: lon });
         setMarker({ latitude: lat, longitude: lon });
         Keyboard.dismiss();
       } else {
@@ -75,61 +67,104 @@ export default function App() {
     }
   };
 
+  const handleAddMarker = () => {
+    setAddedMarkers([...addedMarkers, { latitude: region.latitude, longitude: region.longitude }]);
+  };
+
+  const handleMapPress = (e: MapPressEvent) => {
+    const coord = e.nativeEvent.coordinate;
+    setAddedMarkers([...addedMarkers, coord]);
+  };
+
+  // Tap on marker → show route
+  const handleMarkerPress = (coord: { latitude: number; longitude: number }) => {
+    setSelectedMarker(coord);
+    setRegion({ ...region, latitude: coord.latitude, longitude: coord.longitude });
+  };
+
   return (
     <View style={styles.container}>
-      {/* Search Input */}
+      {/* Search Bar */}
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.input}
           placeholder="Search city or location"
+          placeholderTextColor="#888"
           value={searchText}
           onChangeText={setSearchText}
         />
-        <Button title="Search" onPress={handleSearch} />
+        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
+          <Text style={styles.buttonText}>Search</Text>
+        </TouchableOpacity>
       </View>
 
+      {/* Add Marker Button */}
+      <TouchableOpacity style={styles.addMarkerButton} onPress={handleAddMarker}>
+        <Text style={styles.addMarkerText}>＋ Add Marker</Text>
+      </TouchableOpacity>
+
       {/* Map */}
-      <MapView style={styles.map} region={region}>
+      <MapView
+        style={styles.map}
+        region={region}
+        onRegionChangeComplete={(r) => setRegion(r)}
+        onPress={handleMapPress}
+      >
+        {/* Carto Voyager raster tiles */}
         <UrlTile
           urlTemplate="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
           subdomains={["a", "b", "c", "d"]}
           maximumZ={19}
         />
 
-        {/* Marker for searched location */}
-        {marker && <Marker coordinate={marker} title={searchText} description="Searched location" />}
-
-        {/* Marker for current location */}
-        {currentLocation && <Marker coordinate={currentLocation} title="You are here" pinColor="blue" />}
-
-        {/* Route from current location to searched location */}
-        {currentLocation && marker && (
-          <Polyline
-            coordinates={[currentLocation, marker]}
-            strokeColor="#FF0000"
-            strokeWidth={3}
+        {/* Markers */}
+        {marker && (
+          <Marker
+            coordinate={marker}
+            title={searchText}
+            description="Searched location"
+            pinColor="#2ecc71"
+            onPress={() => handleMarkerPress(marker)}
           />
+        )}
+        {currentLocation && <Marker coordinate={currentLocation} title="You are here" pinColor="#3498db" />}
+        {addedMarkers.map((m, i) => (
+          <Marker
+            key={i}
+            coordinate={m}
+            title={`Marker ${i + 1}`}
+            pinColor="#e74c3c"
+            onPress={() => handleMarkerPress(m)}
+          />
+        ))}
+
+        {/* Route to selected marker */}
+        {currentLocation && selectedMarker && (
+          <Polyline coordinates={[currentLocation, selectedMarker]} strokeColor="#f39c12" strokeWidth={4} />
         )}
       </MapView>
 
       {/* OSM Attribution */}
       <View style={styles.attribution}>
-        <Text style={{ fontSize: 12 }}>© OpenStreetMap contributors</Text>
+        <Text style={{ fontSize: 12, color: "#555" }}>© OpenStreetMap contributors</Text>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: "#f0f0f0" },
   map: { flex: 1 },
   attribution: {
     position: "absolute",
     bottom: 10,
     right: 10,
-    backgroundColor: "rgba(255,255,255,0.7)",
-    padding: 4,
-    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.85)",
+    padding: 6,
+    borderRadius: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   searchContainer: {
     position: "absolute",
@@ -138,17 +173,45 @@ const styles = StyleSheet.create({
     right: 10,
     zIndex: 10,
     flexDirection: "row",
-    backgroundColor: "rgba(255,255,255,0.9)",
-    borderRadius: 8,
+    backgroundColor: "#fff",
+    borderRadius: 12,
     padding: 5,
-    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 5,
   },
   input: {
     flex: 1,
-    padding: 8,
-    borderColor: "#ccc",
+    padding: 10,
+    borderRadius: 10,
+    borderColor: "#ddd",
     borderWidth: 1,
-    borderRadius: 6,
-    marginRight: 5,
+    marginRight: 8,
+    fontSize: 16,
+    color: "#333",
   },
+  searchButton: {
+    backgroundColor: "#3498db",
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 10,
+    justifyContent: "center",
+  },
+  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  addMarkerButton: {
+    position: "absolute",
+    top: 100,
+    left: 10,
+    zIndex: 10,
+    backgroundColor: "#e74c3c",
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  addMarkerText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
 });
