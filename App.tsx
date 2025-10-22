@@ -1,6 +1,7 @@
-import React, { useState } from "react";
-import { StyleSheet, View, Text, TextInput, Button, Keyboard } from "react-native";
-import MapView, { Marker, UrlTile } from "react-native-maps";
+import React, { useState, useEffect } from "react";
+import { StyleSheet, View, Text, TextInput, Button, Keyboard, Alert } from "react-native";
+import MapView, { Marker, UrlTile, Polyline } from "react-native-maps";
+import * as Location from "expo-location";
 
 export default function App() {
   const [region, setRegion] = useState({
@@ -10,8 +11,32 @@ export default function App() {
     longitudeDelta: 0.05,
   });
 
+  const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [marker, setMarker] = useState<{ latitude: number; longitude: number } | null>(null);
   const [searchText, setSearchText] = useState("");
+
+  // Get user location
+  useEffect(() => {
+    (async () => {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission denied", "Allow location access to use routing.");
+        return;
+      }
+
+      let location = await Location.getCurrentPositionAsync({});
+      setCurrentLocation({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+
+      setRegion({
+        ...region,
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+    })();
+  }, []);
 
   const handleSearch = async () => {
     if (!searchText) return;
@@ -71,11 +96,18 @@ export default function App() {
           maximumZ={19}
         />
 
-        {marker && (
-          <Marker
-            coordinate={marker}
-            title={searchText}
-            description="Searched location"
+        {/* Marker for searched location */}
+        {marker && <Marker coordinate={marker} title={searchText} description="Searched location" />}
+
+        {/* Marker for current location */}
+        {currentLocation && <Marker coordinate={currentLocation} title="You are here" pinColor="blue" />}
+
+        {/* Route from current location to searched location */}
+        {currentLocation && marker && (
+          <Polyline
+            coordinates={[currentLocation, marker]}
+            strokeColor="#FF0000"
+            strokeWidth={3}
           />
         )}
       </MapView>
